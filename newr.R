@@ -393,7 +393,7 @@ for (i in 1:100)
   dat_samp = X[samp,]
   outs[i,] = mean(dnorm(dat_samp%*%probitcoef))*probitcoef
 }
-#marginal effect of probit: 0.0012332556 0.0013601814 0.0010291650 0.0001926903
+#se of marginal effect of probit: 0.0012332556 0.0013601814 0.0010291650 0.0001926903
 apply(outs,2,sd)
 
 outs = mat.or.vec(100,4)
@@ -403,6 +403,6 @@ for (i in 1:100)
   dat_samp = X[samp,]
   outs[i,] = mean(dnorm(dat_samp%*%logitcoef))*logitcoef
 }
-#marginal effect of logit:0.0024575925 0.0027276872 0.0020763755 0.0003854093
+#se of marginal effect of logit:0.0024575925 0.0027276872 0.0020763755 0.0003854093
 apply(outs,2,sd)
    
