@@ -373,14 +373,14 @@ prop_sigma
 # the interpretation on coefficients for logit are same as for probit
 #see above.
 
-#calculate marginal effect of probit
+#calculate marginal effect of probit: -0.3007497  0.3317026 -0.2509788  0.0469907
 mean(dnorm(X%*%probitcoef))*probitcoef
 #derivative of sigmoid
 dsigmoid <- function(x) {
   s <- sigmoid(x)
   s * (1 - s)
 }
-#marginal effect of logit
+#marginal effect of logit: -0.29703555  0.32968040 -0.25095998  0.04658228
 mean(dsigmoid(X%*%logitcoef))*logitcoef
 
 #For standard errors I use bootstrap
@@ -393,7 +393,7 @@ for (i in 1:100)
   dat_samp = X[samp,]
   outs[i,] = mean(dnorm(dat_samp%*%probitcoef))*probitcoef
 }
-#marginal effect of probit
+#marginal effect of probit: 0.0012332556 0.0013601814 0.0010291650 0.0001926903
 apply(outs,2,sd)
 
 outs = mat.or.vec(100,4)
@@ -403,6 +403,6 @@ for (i in 1:100)
   dat_samp = X[samp,]
   outs[i,] = mean(dnorm(dat_samp%*%logitcoef))*logitcoef
 }
-#marginal effect of logit
+#marginal effect of logit:0.0024575925 0.0027276872 0.0020763755 0.0003854093
 apply(outs,2,sd)
    
