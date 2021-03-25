@@ -1,0 +1,312 @@
+---
+title: "R Notebook"
+output: pdf_document
+---
+
+Part 1
+
+```{r}
+#remove variables
+rm(list=ls())
+#import needed libraries
+library("bayesm")
+library(tidyverse)
+library(tidyr)
+library(dplyr)
+library(nnet)
+#Load in the Data
+data(margarine)
+#create dataframes
+df=as.data.frame(margarine$choicePrice)
+df2=as.data.frame(margarine$demos)
+df3=left_join(df, df2,by="hhid")
+
+```
+
+Descriptives
+```{r}
+#Q1 Means
+colMeans(df)
+#Write SD function by column
+colSd <- function (x, na.rm=FALSE) apply(X=x, MARGIN=2, FUN=sd, na.rm=na.rm)
+#Column standard deviation
+colSd(df)
+#Groupby count of choices and get marketshare
+temp=count(df,"hhid")[1,'n']
+a=df %>% group_by(choice) %>% count("hhid")
+a['n']=a['n']/temp
+a
+#to determine whether a person bought a product that was above the mean price for their options, create the average price per row and create an indicator for if the selected choice has a price that is above that average. Then create a groupby for both above and below 
+paramnames=colnames(df)[3:12]
+#calculate row's mean
+temp=rowMeans(df[,paramnames])
+#create a variable for the price of the selected good
+temp2=mat.or.vec(nrow(df),1)
+for (i in 1:nrow(df))
+{
+  temp2[i]=df[i,paramnames[df[i,'choice']]]
+}
+df['price']=temp2
+#generate a variable if above the mean
+df['abovemean']=as.integer(df['price']>temp)
+#create our groupby 
+a=df %>% group_by(choice, abovemean) %>% count("hhid")
+#marketshare for above mean price
+a2=a[a['abovemean']==1,]
+a2['n']=a2['n']/sum(a2['n'])
+a2
+#market share for below mean prices
+a3=a[a['abovemean']==0,]
+a3['n']=a3['n']/sum(a3['n'])
+a3
+# Descriptives on which personal characteristics tend to be higher for each choice on average
+aggregate(df3[,colnames(df2)[2:8]],list(df3$choice),mean)
+```
+Exercise 2
+
+
+```{r}
+#Set random seed
+set.seed(42)
+#create a list of our parameter names
+paramnames=colnames(df)[3:12]
+#get the number of parameters, choices, and observations
+numin=length(paramnames)
+numout=n_distinct(df['choice'])
+numobs=nrow(df)
+#create a random start of size number of choices (10 intercepts) plus one more for price
+start=runif(numout+1,-10,10)
+#create a matrix of equal size to the observations and number of choices
+ut = mat.or.vec(numobs,numout)
+#create our likelihood function
+flike=function(param,df){
+  #loop for each choice
+for (j in 1:numout)
+{
+  #replace in our empty matrix with the intercept for that choice
+  #plus the beta for price times the price of the choice
+  ut[,j]=param[j]+param[numout+1]*df[,paramnames[j]]
+}
+  #calculate the probabilities
+prob   = exp(ut)            # exp(XB)
+prob   = sweep(prob,MARGIN=1,FUN="/",STATS=rowSums(prob)) 
+#select the probability in question
+probc = NULL
+for (i in 1:numobs)
+  {
+    probc[i] = prob[i,df[i,'choice']]
+  }
+  probc[probc>0.999999] = 0.999999
+  probc[probc<0.000001] = 0.000001
+  like = sum(log(probc))
+  return(-like)
+}
+#run the optimization
+res      = optim(start,fn=flike,method="BFGS",control=list(trace=6,maxit=1000),df=df)
+#parameter on beta. All this states is (assuming it is significant) that increasing price, on average decreases the probability a particular good is purchased
+res$par[11]
+```
+Part 4 Marginal Effects Conditional Logit (see below for part 3)
+```{r}
+#take the output parameters
+param=res$par
+#calculate our counts and matrix
+numin=length(paramnames)
+numout=n_distinct(df['choice'])
+numobs=nrow(df)
+ut = mat.or.vec(numobs,numout)
+#rerun our probabilities from before
+for (j in 1:numout)
+{
+  ut[,j]=param[j]+param[numout+1]*df[,paramnames[j]]
+}
+prob   = exp(ut)            # exp(XB)
+prob   = sweep(prob,MARGIN=1,FUN="/",STATS=rowSums(prob))
+
+#create an empty matrix
+paramc = mat.or.vec(numobs,numout)
+#for each i and j calculate the effect of beta using the marginal effect formula
+for (i in 1:numobs)
+  {
+    #find the selected choice
+    temp=df[i,'choice']
+    for (j in 1:numout)
+    {
+      if (temp==j)
+      {
+       paramc[i,j]=prob[i,j]*(1-prob[i,j])*param[11] 
+      }
+      if (temp!=j)
+      {
+       paramc[i,j]=prob[i,j]*(-prob[i,j])*param[11] 
+      }
+    }
+  
+}
+#Marginal effects of increasing the price of a good on each of the 10 products. These tell us how an increase in price affects the probability that any one choice is chosen
+  colMeans(paramc)
+```
+
+Exercise 3 Multinomial
+```{r}
+#same as before
+numout=n_distinct(df3['choice'])
+numobs=nrow(df3)
+start=runif(20,-1,1)
+ut = mat.or.vec(numobs,numout)
+
+
+flike=function(param,df3){
+  #create 20 parameters, 10 constants and 10 betas (1 for each choice)
+const=param[1:10]
+pn1=param[11:20]
+#loop through choices
+for (j in 1:10)
+{
+  #add income times the beta parameter plus the corresponding constant
+  ut[,j]=const[j]+pn1[j]*df3[,'Income']
+}
+#same as before
+prob   = exp(ut)            # exp(XB)
+prob   = sweep(prob,MARGIN=1,FUN="/",STATS=rowSums(prob)) 
+probc = NULL
+for (i in 1:numobs)
+  {
+    probc[i] = prob[i,df3[i,'choice']]
+  }
+  probc[probc>0.999999] = 0.999999
+  probc[probc<0.000001] = 0.000001
+  like = sum(log(probc))
+  return(-like)
+}
+#same as before on optimization
+res      = optim(start,fn=flike,method="BFGS",control=list(trace=6,maxit=1000),df3=df3)
+#intercepts
+res$par[1:10]
+#coefficients on income. It says that income increases the probability of choosing certain products and decreases the probability of choosing other products (because there are 10, 1 one would be put into a main effect and the others would be incremental)
+res$par[11:20]
+
+```
+Part 4 Multinomial Marginal Effects
+```{r}
+numin=length(paramnames)
+numout=n_distinct(df3['choice'])
+numobs=nrow(df3)
+ut = mat.or.vec(numobs,numout)
+param=res$par
+const=param[1:10]
+pn1=param[11:20]
+
+for (j in 1:10)
+{
+  ut[,j]=const[j]+pn1[j]*df3[,'Income']
+}
+prob   = exp(ut)            # exp(XB)
+prob   = sweep(prob,MARGIN=1,FUN="/",STATS=rowSums(prob)) 
+probc = NULL
+probc2=mat.or.vec(numobs,numout)
+probc3=mat.or.vec(numobs,numout)
+for (i in 1:numobs)
+  {
+    probc[i] = prob[i,df3[i,'choice']]
+    probc2[i,]=prob[i,]*(const-sum(prob[i,]*const))
+    probc3[i,]=prob[i,]*(pn1-sum(prob[i,]*pn1))
+  }
+  probc[probc>0.999999] = 0.999999
+  probc[probc<0.000001] = 0.000001
+  like = sum(log(probc))
+  #marginal effects for intercepts
+colMeans(probc2)
+#marginal effects for coefficients. Increases in family income are associated with an increase in probability to pick some products and a decrease in probability to pick others
+colMeans(probc3)
+```
+Exercise 5 Part 1: Create beta f
+```{r}
+#same as in conditional logit, but will need more parameters
+paramnames=colnames(df)[3:12]
+numout=n_distinct(df3['choice'])
+numobs=nrow(df3)
+start=runif(21,-1,1)
+ut = mat.or.vec(numobs,numout)
+
+
+flike=function(param,df3){
+  #same parameters for family income
+const=param[1:10]
+pn1=param[11:20]
+# loop over 10
+for (j in 1:10)
+{
+  # combine the two models previously
+  ut[,j]=const[j]+pn1[j]*df3[,'Income']+param[2*numout+1]*df3[,paramnames[j]]
+}
+#rest of the calculation is identical
+prob   = exp(ut)            # exp(XB)
+prob   = sweep(prob,MARGIN=1,FUN="/",STATS=rowSums(prob)) 
+probc = NULL
+for (i in 1:numobs)
+  {
+    probc[i] = prob[i,df3[i,'choice']]
+  }
+  probc[probc>0.999999] = 0.999999
+  probc[probc<0.000001] = 0.000001
+  like = sum(log(probc))
+  return(-like)
+}
+#use the same optimization
+res      = optim(start,fn=flike,method="BFGS",control=list(trace=6,maxit=1000),df3=df3)
+#calculate the likelihood of the model
+l1=res$value
+
+
+
+```
+Excercise 5 Part 2 create beta r and test IIA
+```{r}
+#drop choice 10
+df4=df3[df3['choice']!=10,]
+#adjust parameters for the lost choice
+paramnames=colnames(df)[3:11]
+numout=n_distinct(df4['choice'])
+numobs=nrow(df4)
+#lower number of starting parameters for the missing choices
+start=runif(19,-1,1)
+ut = mat.or.vec(numobs,numout)
+#define function
+flike=function(param,df4){
+  #similar to before, but now with 9 choices
+const=param[1:9]
+pn1=param[10:18]
+#only iterate over 9 choices
+for (j in 1:9)
+{
+  ut[,j]=const[j]+pn1[j]*df4[,'Income']+param[2*numout+1]*df4[,paramnames[j]]
+}
+#same calculation as before
+prob   = exp(ut)            # exp(XB)
+prob   = sweep(prob,MARGIN=1,FUN="/",STATS=rowSums(prob)) 
+probc = NULL
+for (i in 1:numobs)
+  {
+    probc[i] = prob[i,df4[i,'choice']]
+  }
+  probc[probc>0.999999] = 0.999999
+  probc[probc<0.000001] = 0.000001
+  like = sum(log(probc))
+  return(-like)
+}
+#same optimization
+res      = optim(start,fn=flike,method="BFGS",control=list(trace=6,maxit=1000),df4=df4)
+l2=res$value
+#create our test statistic for IIA
+-2*(l1-l2)
+#Clearly this is significant on a chi-squared distribution, and thus we can conclude that we violate IIA
+```
+
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+```
+
